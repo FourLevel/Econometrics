@@ -1,87 +1,167 @@
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
 import statsmodels.api as sm
 from scipy import stats
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from statsmodels.stats.diagnostic import het_breuschpagan
+from statsmodels.stats.stattools import durbin_watson
 from linearmodels.panel import PanelOLS, RandomEffects
 
-# 讀取 Excel 檔案
+
+# Read Excel file
 file_path = '銀行資料_丟迴歸分析_20240523.csv'
 data = pd.read_csv(file_path)
 
-# 選擇變數並重命名
-df = data[['公司代碼', '年', 'Z-score', 'ln資產總額', 'ln淨收益', '當季季底P/B', 
+# Select variables
+df = data[['公司代碼', '年', 'Z-score', '資產總額', '淨收益', '當季季底P/B', 
            '負債比率', '公司年齡', '董事總持股數%', '經理人總持股%', 
            '是否在金融危機時期', '是否在COVID時期']]
-df.columns = ['id', 'time', 'y', 'x1', 'x2', 'x3', 'x4', 'x5', 'x6', 'x7', 'x8', 'x9']
+df.columns = ['company_code', 'year', 'z_score', 'total_assets', 'net_income', 'pb_ratio', 
+              'debt_ratio', 'company_age', 'shareholders_percentage', 'managers_percentage', 
+              'crisis_period', 'covid_period']
 
-# 設置 Panel Data
-df = df.set_index(['id', 'time'])
+# Set Panel Data
+df = df.set_index(['company_code', 'year'])
+
+# Standardize quantitative variables and add them to df
+df[['std_total_assets', 'std_net_income', 'std_pb_ratio', 'std_debt_ratio', 'std_company_age', 'std_shareholders_percentage', 'std_managers_percentage']] = df[['total_assets', 'net_income', 'pb_ratio', 'debt_ratio', 'company_age', 'shareholders_percentage', 'managers_percentage']].apply(lambda x: (x - x.mean()) / x.std())
+
+# Set y and X
+y = df['z_score']
+X = df[['std_total_assets', 'std_net_income', 'std_pb_ratio', 'std_debt_ratio', 'std_company_age', 'std_shareholders_percentage', 'std_managers_percentage', 'crisis_period', 'covid_period']]
+
+# Choose X variables
+X_model_1 = df[['std_total_assets', 'std_pb_ratio', 'std_debt_ratio', 'std_company_age', 'std_managers_percentage', 'crisis_period']]
 
 
+''' Check Linear Relationship '''
+# Plot dependent variable and independent variables
+plt.figure(figsize=(10, 10), dpi=100)
+plt.suptitle('Scatter Plot of Independent Variables vs Dependent Variable')
+for i, col in enumerate(X_model_1.columns):
+    plt.subplot(3, 3, i + 1)
+    plt.scatter(X_model_1[col], y, alpha=1)
+    plt.title(f'{col} vs Z-score')
+    plt.xlabel(col)
+    plt.ylabel('Z-score')
+plt.tight_layout()
+plt.show()
 
-''' 進行 VIF 檢定 '''
-# 準備自變數矩陣
-X = df[['x1', 'x2', 'x3', 'x4', 'x5', 'x6', 'x7', 'x8', 'x9']]
-X['const'] = 1  # 增加常數項
 
-# 計算VIF
+''' Check Multi-collinearity '''
+# Check Correlation Matrix
+plt.figure(figsize=(10, 10), dpi=100)
+plt.title('Correlation Matrix')
+sns.heatmap(X_model_1.corr(), annot=True, cmap='coolwarm')
+plt.show()
+
+# Check Variance Inflation Factor (VIF)
+X_model_1 = sm.add_constant(X_model_1)
+# Calculate VIF
 vif_data = pd.DataFrame()
-vif_data["feature"] = X.columns
-vif_data["VIF"] = [variance_inflation_factor(X.values, i) for i in range(len(X.columns))]
+vif_data["Variable"] = X_model_1.columns
+vif_data["VIF"] = [variance_inflation_factor(X_model_1.values, i) for i in range(X_model_1.shape[1])]
 
+# Display results
+print("VIF results：")
 print(vif_data)
 
-''' 
-解讀 VIF 檢定結果
-VIF 值小於 10：表明變數之間的多重共線性問題不嚴重，可以保留在模型中。
-VIF 值大於 10：表明變數之間存在嚴重的多重共線性，可能需要考慮移除該變數或使用其他方法處理共線性問題。
-'''
+# VIF explanation
+print("\nVIF explanation：")
+print("VIF < 5：No serious multicollinearity")
+print("5 <= VIF < 10：Moderate multicollinearity")
+print("VIF >= 10：Serious multicollinearity, suggest handling")
+
+# Identify variables that need to be handled
+problematic_vars = vif_data[vif_data["VIF"] >= 10]["Variable"].tolist()
+if problematic_vars:
+    print(f"\nVariables need to be handled：{', '.join(problematic_vars)}")
+else:
+    print("\nAll variables' VIF values are within acceptable range")
 
 
+''' Check Autocorrelation '''
+# Check Durbin-Watson Test
+# Fit regression model
+model = sm.OLS(y, X_model_1).fit()
 
-''' 進行 Breusch-Pagan 檢定 '''
-# 設置自變數矩陣
-X = sm.add_constant(df[['x1', 'x2', 'x3', 'x4', 'x5', 'x6', 'x7', 'x8', 'x9']])
+# Calculate Durbin-Watson statistic
+dw_statistic = durbin_watson(model.resid)
+print("\nDurbin-Watson Test results：")
+print(f"Durbin-Watson statistic：{dw_statistic:.4f}")
 
-# 設置應變數
-y = df['y']
+# Durbin-Watson statistic explanation
+print("\nDurbin-Watson statistic explanation：")
+print("0 to 2：Positive autocorrelation")
+print("2：No autocorrelation")
+print("2 to 4：Negative autocorrelation")
 
-# 擬合回歸模型
-model = sm.OLS(y, X).fit()
+if dw_statistic < 1:
+    print("\nConclusion：Significant positive autocorrelation")
+elif dw_statistic > 3:
+    print("\nConclusion：Significant negative autocorrelation")
+else:
+    print("\nConclusion：No significant autocorrelation")
 
-# 進行 Breusch-Pagan 檢定
+
+''' Perform Breusch-Pagan test '''
+# Fit regression model
+model = sm.OLS(y, X_model_1).fit()
+
+# Perform Breusch-Pagan test
 bp_test = het_breuschpagan(model.resid, model.model.exog)
 
 labels = ['Lagrange multiplier statistic', 'p-value', 'f-value', 'f p-value']
 bp_result = dict(zip(labels, bp_test))
 
-# 打印 Breusch-Pagan 檢定結果
+# Print Breusch-Pagan test results
 print("\nBreusch-Pagan Test:")
 for key, value in bp_result.items():
     print(f"  {key}: {value}")
 
 '''
-解讀結果
-Lagrange multiplier statistic：這是 Breusch-Pagan 檢定的檢定統計量。它衡量的是模型中異方差性的程度。該值本身並沒有一個直接的解釋，主要是與 p 值結合起來使用。
-p-value：這是與檢定統計量相關聯的 p 值。它表示在零假設（即沒有異方差性）的情況下，檢定統計量比觀測到的值更極端的概率。通常使用 0.05 作為顯著性水平。如果 p 值小於 0.05，則可以拒絕零假設，認為存在異方差性。
-f-value：這是基於 F 檢定的統計量，衡量的是異方差性的程度。和 Lagrange multiplier statistic 一樣，該值本身主要是與其對應的 p 值結合使用。
-f p-value：這是與 f-value 對應的 p 值。它與 Lagrange multiplier statistic 的 p 值解釋類似。
+Interpretation of results
+Lagrange multiplier statistic：This is the test statistic for the Breusch-Pagan test. It measures the degree of heteroscedasticity in the model. The value itself does not have a direct interpretation, but is used in conjunction with the p-value.
+p-value：This is the p-value associated with the test statistic. It represents the probability of observing a test statistic as extreme as the one observed, assuming the null hypothesis (no heteroscedasticity) is true. Typically, a significance level of 0.05 is used. If the p-value is less than 0.05, the null hypothesis can be rejected, indicating the presence of heteroscedasticity.
+f-value：This is the test statistic based on the F test. It measures the degree of heteroscedasticity. Like the Lagrange multiplier statistic, this value is primarily used in conjunction with its corresponding p-value.
+f p-value：This is the p-value associated with the f-value. It is similar to the p-value interpretation of the Lagrange multiplier statistic.
 '''
 
 
+''' Check Normal Distribution '''
+# Kolmogorov-Smirnov Test
+ks_statistic, ks_p_value = stats.kstest(model.resid, 'norm')
+print(f"Kolmogorov-Smirnov Test:")
+print(f"  Statistic: {ks_statistic:.4f}")
+print(f"  p-value: {ks_p_value:.4f}")
 
-''' 進行 Hausman 檢定 '''
-# 固定效應模型
-fixed_effects_model = PanelOLS.from_formula('y ~ x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + EntityEffects', data=df)
+# QQ Plot
+plt.figure(figsize=(10, 6), dpi=100)
+stats.probplot(model.resid, dist="norm", plot=plt)
+plt.title('QQ Plot')
+plt.show()
+
+# Residuals Distribution
+plt.figure(figsize=(10, 6), dpi=100)
+plt.hist(model.resid, bins=30, edgecolor='black', alpha=0.7)
+plt.title('Residuals Distribution')
+plt.xlabel('Residuals')
+plt.ylabel('Frequency')
+plt.show()
+
+
+''' Perform Hausman Test '''
+# Fixed effects model
+fixed_effects_model = PanelOLS.from_formula('y ~ std_total_assets + std_pb_ratio + std_debt_ratio + std_company_age + std_managers_percentage + crisis_period + EntityEffects', data=df)
 fixed_effects_results = fixed_effects_model.fit()
 
-# 隨機效應模型
-random_effects_model = RandomEffects.from_formula('y ~ x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9', data=df)
+# Random effects model
+random_effects_model = RandomEffects.from_formula('y ~ std_total_assets + std_pb_ratio + std_debt_ratio + std_company_age + std_managers_percentage + crisis_period', data=df)
 random_effects_results = random_effects_model.fit()
 
-# 進行 Hausman 檢定
+# Perform Hausman test
 def hausman(fe, re):
     b_diff = fe.params - re.params
     b_diff_cov = fe.cov - re.cov
@@ -100,68 +180,62 @@ hausman_result = {
     'Random effects coefficients': random_effects_results.params
 }
 
-# 顯示 Hausman 檢定結果
+# Display Hausman test results
 print(f"Hausman test statistic: {hausman_result['Hausman test statistic']}")
 print(f"Degrees of freedom: {hausman_result['Degrees of freedom']}")
 print(f"p-value: {hausman_result['p-value']}")
 
-print("\nFixed effects coefficients:")
-for key, value in hausman_result['Fixed effects coefficients'].items():
-    print(f"  {key}: {value}")
-
-print("\nRandom effects coefficients:")
-for key, value in hausman_result['Random effects coefficients'].items():
-    print(f"  {key}: {value}")
-
-'''
-解讀結果
-Hausman test statistic：這是檢定統計量。該值越大，表示固定效應模型和隨機效應模型的估計結果之間差異越大。
-Degrees of freedom：這是檢定統計量的自由度，通常等於參數的個數。
-p-value：這是與檢定統計量相關聯的 p 值。如果 p 值小於某個顯著性水平（0.05），則表示資料適合使用固定效應模型。
-Fixed effects coefficients：這是固定效應模型的估計係數。
-Random effects coefficients：這是隨機效應模型的估計係數。
-'''
-
-
-
-''' 進行隨機效應模型分析 '''
-# 讀取上傳的 CSV 檔案
-file_path = '銀行資料_丟迴歸分析_20240523.csv'
-data = pd.read_csv(file_path)
-
-# 選擇變數並重命名
-df = data[['公司代碼', '年', 'Z-score', 'ln資產總額', 'ln淨收益', '當季季底P/B', '負債比率', '公司年齡', '董事總持股數%', '經理人總持股%', '是否在金融危機時期', '是否在COVID時期']]
-df.columns = ['id', 'time', 'y', 'x1', 'x2', 'x3', 'x4', 'x5', 'x6', 'x7', 'x8', 'x9']
-
-# 設置 Panel Data
-df = df.set_index(['id', 'time'])
-
-# 建立隨機效應模型
-random_effects_model = RandomEffects.from_formula('y ~ x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9', data=df)
-random_effects_results = random_effects_model.fit()
-
-# 顯示模型摘要
-print(random_effects_results.summary)
-
-
-
-'''
-# 進行固定效應模型分析
-# 讀取上傳的 CSV 檔案
-file_path = '銀行資料_丟迴歸分析_20240523.csv'
-data = pd.read_csv(file_path)
-
-# 選擇變數並重命名
-df = data[['公司代碼', '年', 'Z-score', 'ln資產總額', 'ln淨收益', '當季季底P/B', '負債比率', '公司年齡', '董事總持股數%', '經理人總持股%', '是否在金融危機時期', '是否在COVID時期']]
-df.columns = ['id', 'time', 'y', 'x1', 'x2', 'x3', 'x4', 'x5', 'x6', 'x7', 'x8', 'x9']
-
-# 設置 Panel Data
-df = df.set_index(['id', 'time'])
-
-# 建置固定效應模型
-fixed_effects_model = PanelOLS.from_formula('y ~ x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + EntityEffects', data=df)
-fixed_effects_results = fixed_effects_model.fit()
-
-# 顯示結果摘要
+# Display fixed effects model summary
 print(fixed_effects_results.summary)
+
 '''
+Interpretation of results
+Hausman test statistic：This is the test statistic. The larger the value, the greater the difference between the estimates of the fixed effects model and the random effects model.
+Degrees of freedom：This is the degrees of freedom for the test statistic, usually equal to the number of parameters.
+p-value：This is the p-value associated with the test statistic. If the p-value is less than a certain significance level (0.05), it indicates that the data is more suitable for the fixed effects model.
+Fixed effects coefficients：This is the estimated coefficients of the fixed effects model.
+Random effects coefficients：This is the estimated coefficients of the random effects model.
+'''
+
+
+''' Clean up results '''
+# Save Model 1 variables' Coefficient, Std. Error, p-value, VIF, and print the table
+coefficients = fixed_effects_results.params
+std_errors = fixed_effects_results.std_errors
+p_values = fixed_effects_results.pvalues
+
+# Calculate VIF
+vif_data = pd.DataFrame()
+vif_data["Variable"] = X_model_1.columns
+vif_data["VIF"] = [variance_inflation_factor(X_model_1.values, i) for i in range(X_model_1.shape[1])]
+
+# Merge results
+results_df = pd.DataFrame({
+    "Coefficient": coefficients,
+    "Std. Error": std_errors,
+    "p-value": p_values
+}).reset_index().rename(columns={"index": "Variable"})
+
+# Merge VIF
+results_df = results_df.merge(vif_data, on="Variable")
+
+# Round values to four decimal places
+results_df = results_df.round(4)
+
+# Add stars based on significance
+def significance_stars(p):
+    if p < 0.001:
+        return '***'
+    elif p < 0.01:
+        return '**'
+    elif p < 0.05:
+        return '*'
+    elif p < 0.1:
+        return '.'
+    else:
+        return ''
+
+results_df['p-value'] = results_df['p-value'].apply(lambda x: f"{x:.4f}{significance_stars(x)}")
+
+# Print the table
+print(results_df.to_markdown(index=False))
