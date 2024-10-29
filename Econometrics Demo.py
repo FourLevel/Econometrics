@@ -12,6 +12,7 @@ from linearmodels.panel import PanelOLS, RandomEffects
 
 # Read Excel file
 file_path = '銀行資料_丟迴歸分析_20240523.csv'
+# file_path = '銀行資料_丟迴歸分析_20241029.csv'
 data = pd.read_csv(file_path)
 
 # Select variables
