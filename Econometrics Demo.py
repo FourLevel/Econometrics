@@ -31,7 +31,14 @@ df[['std_total_assets', 'std_net_income', 'std_pb_ratio', 'std_debt_ratio', 'std
 
 # Set y and X
 y = df['z_score']
-X = df[['std_total_assets', 'std_net_income', 'std_pb_ratio', 'std_debt_ratio', 'std_company_age', 'std_shareholders_percentage', 'std_managers_percentage', 'crisis_period', 'covid_period']]
+X_quantitative = df[['std_total_assets', 'std_net_income', 'std_pb_ratio', 'std_debt_ratio', 
+                     'std_company_age', 'std_shareholders_percentage', 'std_managers_percentage']]
+
+# Check Correlation Matrix
+plt.figure(figsize=(10, 6), dpi=100)
+plt.title('Correlation Matrix')
+sns.heatmap(X_quantitative.corr(), annot=True, cmap='coolwarm')
+plt.show()
 
 # Choose X variables
 X_model_1 = df[['std_total_assets', 'std_pb_ratio', 'std_debt_ratio', 'std_company_age', 'std_managers_percentage', 'crisis_period']]
