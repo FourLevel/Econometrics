@@ -40,6 +40,24 @@ plt.title('Correlation Matrix')
 sns.heatmap(X_quantitative.corr(), annot=True, cmap='coolwarm')
 plt.show()
 
+
+# 將每一個 X_quantitative 對 y 進行 PanelOLS迴歸分析，將 p-value 整理成 list
+pvalue_results = pd.DataFrame(columns=['Variable', 'p-value'])
+
+for column in X_quantitative.columns:
+    # 使用當前變數進行 PanelOLS 迴歸分析
+    formula = f'y ~ {column} + EntityEffects'
+    fixed_effects_model = PanelOLS.from_formula(formula, data=df)
+    fixed_effects_results = fixed_effects_model.fit()
+    
+    # 獲取當前變數的 p-value
+    p_value = fixed_effects_results.pvalues[column]
+    new_row = pd.DataFrame({'Variable': [column], 'p-value': [f"{p_value:.4f}"]})
+    pvalue_results = pd.concat([pvalue_results, new_row], ignore_index=True)
+
+print(pvalue_results)
+
+
 # Choose X variables
 X_model_1 = df[['std_total_assets', 'std_pb_ratio', 'std_debt_ratio', 'std_company_age', 'std_managers_percentage', 'crisis_period']]
 
@@ -106,9 +124,9 @@ print("0 to 2：Positive autocorrelation")
 print("2：No autocorrelation")
 print("2 to 4：Negative autocorrelation")
 
-if dw_statistic < 1:
+if dw_statistic < 1.5:
     print("\nConclusion：Significant positive autocorrelation")
-elif dw_statistic > 3:
+elif dw_statistic > 2.5:
     print("\nConclusion：Significant negative autocorrelation")
 else:
     print("\nConclusion：No significant autocorrelation")
