@@ -41,15 +41,33 @@ sns.heatmap(X_quantitative.corr(), annot=True, cmap='coolwarm')
 plt.show()
 
 
+''' Single factor analysis: Check Variable Significance '''
+# Perform OLS regression analysis for each X_quantitative variable against y, and organize p-values into a list
+pvalue_results = pd.DataFrame(columns=['Variable', 'p-value'])
+
+for column in X_quantitative.columns:
+    # Use current variable for OLS regression analysis
+    formula = f'y ~ {column} + EntityEffects'
+    fixed_effects_model = PanelOLS.from_formula(formula, data=df)
+    fixed_effects_results = fixed_effects_model.fit()
+    
+    # Get p-value of current variable
+    p_value = fixed_effects_results.pvalues[column]
+    new_row = pd.DataFrame({'Variable': [column], 'p-value': [f"{p_value:.4f}"]})
+    pvalue_results = pd.concat([pvalue_results, new_row], ignore_index=True)
+
+print(pvalue_results)
+
+
 ''' Choose variables and perform Regression Model '''
 # Choose X variables
 X_model_1 = df[['std_total_assets', 'std_pb_ratio', 'std_debt_ratio', 'std_company_age', 'std_managers_percentage', 'crisis_period']]
 
-# Fixed effects model
+# Regression Model
 fixed_effects_model = PanelOLS.from_formula('y ~ std_total_assets + std_pb_ratio + std_debt_ratio + std_company_age + std_managers_percentage + crisis_period + EntityEffects', data=df)
 fixed_effects_results = fixed_effects_model.fit()
 
-# Display fixed effects model summary
+# Display regression model summary
 print(fixed_effects_results.summary)
 
 
