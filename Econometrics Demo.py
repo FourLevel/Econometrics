@@ -1,18 +1,18 @@
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-import statsmodels.api as sm
-from scipy import stats
-from statsmodels.stats.outliers_influence import variance_inflation_factor
-from statsmodels.stats.diagnostic import het_breuschpagan
-from statsmodels.stats.stattools import durbin_watson
-from linearmodels.panel import PanelOLS, RandomEffects
+# Import Libraries
+import numpy as np # For numerical operations
+import pandas as pd # For data manipulation
+import matplotlib.pyplot as plt # For plotting
+import seaborn as sns # For plotting
+import statsmodels.api as sm # For statistical modeling
+from scipy import stats # For statistical tests
+from statsmodels.stats.outliers_influence import variance_inflation_factor # For checking multicollinearity
+from statsmodels.stats.diagnostic import het_breuschpagan # For checking heteroscedasticity
+from statsmodels.stats.stattools import durbin_watson # For checking autocorrelation
+from linearmodels.panel import PanelOLS # For performing regression analysis
 
 
 # Read Excel file
 file_path = '銀行資料_丟迴歸分析_20240523.csv'
-# file_path = '銀行資料_丟迴歸分析_20241029v2.csv'
 data = pd.read_csv(file_path)
 
 # Select variables
@@ -22,12 +22,23 @@ df = data[['公司代碼', '年', 'Z-score', '資產總額', '淨收益', '當�
 df.columns = ['company_code', 'year', 'z_score', 'total_assets', 'net_income', 'pb_ratio', 
               'debt_ratio', 'company_age', 'shareholders_percentage', 'managers_percentage', 
               'crisis_period', 'covid_period']
-
-# Set Panel Data
 df = df.set_index(['company_code', 'year'])
 
+# Check missing values
+print(df.isnull().sum())
+
 # Standardize quantitative variables and add them to df
-df[['std_total_assets', 'std_net_income', 'std_pb_ratio', 'std_debt_ratio', 'std_company_age', 'std_shareholders_percentage', 'std_managers_percentage']] = df[['total_assets', 'net_income', 'pb_ratio', 'debt_ratio', 'company_age', 'shareholders_percentage', 'managers_percentage']].apply(lambda x: (x - x.mean()) / x.std())
+# Define columns to standardize
+columns_to_standardize = [
+    'total_assets', 'net_income', 'pb_ratio', 'debt_ratio',
+    'company_age', 'shareholders_percentage', 'managers_percentage']
+
+# Create standardized column names
+standardized_columns = ['std_' + col for col in columns_to_standardize]
+
+# Perform standardization
+df[standardized_columns] = df[columns_to_standardize].apply(
+    lambda x: (x - x.mean()) / x.std())
 
 # Set y and X
 y = df['z_score']
@@ -35,7 +46,7 @@ X_quantitative = df[['std_total_assets', 'std_net_income', 'std_pb_ratio', 'std_
                      'std_company_age', 'std_shareholders_percentage', 'std_managers_percentage']]
 
 # Check Correlation Matrix
-plt.figure(figsize=(10, 6), dpi=100)
+plt.figure(figsize=(10, 6), dpi=200)
 plt.title('Correlation Matrix')
 sns.heatmap(X_quantitative.corr(), annot=True, cmap='coolwarm')
 plt.show()
@@ -61,7 +72,8 @@ print(pvalue_results)
 
 ''' Choose variables and perform Regression Model '''
 # Choose X variables
-X_model_1 = df[['std_total_assets', 'std_pb_ratio', 'std_debt_ratio', 'std_company_age', 'std_managers_percentage', 'crisis_period']]
+X_model_1 = df[['std_total_assets', 'std_pb_ratio', 'std_debt_ratio', 
+                'std_company_age', 'std_managers_percentage', 'crisis_period']]
 
 # Regression Model
 fixed_effects_model = PanelOLS.from_formula('y ~ std_total_assets + std_pb_ratio + std_debt_ratio + std_company_age + std_managers_percentage + crisis_period + EntityEffects', data=df)
@@ -73,7 +85,7 @@ print(fixed_effects_results.summary)
 
 ''' Check Linear Relationship '''
 # Plot dependent variable and independent variables
-plt.figure(figsize=(10, 10), dpi=100)
+plt.figure(figsize=(10, 10), dpi=200)
 plt.suptitle('Scatter Plot of Independent Variables vs Dependent Variable')
 for i, col in enumerate(X_model_1.columns):
     plt.subplot(3, 3, i + 1)
@@ -87,7 +99,7 @@ plt.show()
 
 ''' Check Multi-collinearity '''
 # Check Correlation Matrix
-plt.figure(figsize=(10, 10), dpi=100)
+plt.figure(figsize=(10, 10), dpi=200)
 plt.title('Correlation Matrix')
 sns.heatmap(X_model_1.corr(), annot=True, cmap='coolwarm')
 plt.show()
@@ -141,7 +153,7 @@ else:
     print("\nConclusion：No significant autocorrelation")
 
 
-''' Perform Breusch-Pagan test '''
+''' Check Heteroscedasticity '''
 # Fit regression model
 model = sm.OLS(y, X_model_1).fit()
 
@@ -156,8 +168,13 @@ print("\nBreusch-Pagan Test:")
 for key, value in bp_result.items():
     print(f"  {key}: {value}")
 
+# Short interpretation of results
+print("\nShort interpretation of results：")
+print("If the p-value is less than 0.05, the null hypothesis can be rejected, indicating the presence of heteroscedasticity.")
+print("If the p-value is greater than 0.05, the null hypothesis cannot be rejected, indicating no heteroscedasticity.")
+
 '''
-Interpretation of results
+Interpretation of results：
 Lagrange multiplier statistic：This is the test statistic for the Breusch-Pagan test. It measures the degree of heteroscedasticity in the model. The value itself does not have a direct interpretation, but is used in conjunction with the p-value.
 p-value：This is the p-value associated with the test statistic. It represents the probability of observing a test statistic as extreme as the one observed, assuming the null hypothesis (no heteroscedasticity) is true. Typically, a significance level of 0.05 is used. If the p-value is less than 0.05, the null hypothesis can be rejected, indicating the presence of heteroscedasticity.
 f-value：This is the test statistic based on the F test. It measures the degree of heteroscedasticity. Like the Lagrange multiplier statistic, this value is primarily used in conjunction with its corresponding p-value.
@@ -165,21 +182,29 @@ f p-value：This is the p-value associated with the f-value. It is similar to th
 '''
 
 
-''' Check Normal Distribution '''
+''' Check Residuals Distribution '''
 # Kolmogorov-Smirnov Test
 ks_statistic, ks_p_value = stats.kstest(model.resid, 'norm')
 print(f"Kolmogorov-Smirnov Test:")
 print(f"  Statistic: {ks_statistic:.4f}")
 print(f"  p-value: {ks_p_value:.4f}")
+# Short interpretation of results
+print("\nShort interpretation of results：")
+print("If the p-value is less than 0.05, the null hypothesis can be rejected, indicating that the residuals are not normally distributed.")
+print("If the p-value is greater than 0.05, the null hypothesis cannot be rejected, indicating that the residuals are normally distributed.")
+# Long interpretation of results
+print("\nLong interpretation of results：")
+print("Statistic：This is the test statistic for the Kolmogorov-Smirnov test. It measures the maximum distance between the empirical cumulative distribution function (ECDF) of the residuals and the cumulative distribution function (CDF) of the normal distribution. The value itself does not have a direct interpretation, but is used in conjunction with the p-value.")
+print("p-value：This is the p-value associated with the test statistic. It represents the probability of observing a test statistic as extreme as the one observed, assuming the null hypothesis (the residuals are normally distributed) is true. Typically, a significance level of 0.05 is used. If the p-value is less than 0.05, the null hypothesis can be rejected, indicating that the residuals are not normally distributed.")
 
 # QQ Plot
-plt.figure(figsize=(10, 6), dpi=100)
+plt.figure(figsize=(10, 6), dpi=200)
 stats.probplot(model.resid, dist="norm", plot=plt)
 plt.title('QQ Plot')
 plt.show()
 
 # Residuals Distribution
-plt.figure(figsize=(10, 6), dpi=100)
+plt.figure(figsize=(10, 6), dpi=200)
 plt.hist(model.resid, bins=30, edgecolor='black', alpha=0.7)
 plt.title('Residuals Distribution')
 plt.xlabel('Residuals')
@@ -226,5 +251,10 @@ def significance_stars(p):
 
 results_df['p-value'] = results_df['p-value'].apply(lambda x: f"{x:.4f}{significance_stars(x)}")
 
-# Print the table
+# Print the table and explain the stars
 print(results_df.to_markdown(index=False))
+print("\nExplanation of the stars：")
+print("***：Significant at the 0.1% level")
+print("**：Significant at the 1% level")
+print("*：Significant at the 5% level")
+print(".: Significant at the 10% level")
