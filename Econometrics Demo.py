@@ -40,8 +40,17 @@ plt.title('Correlation Matrix')
 sns.heatmap(X_quantitative.corr(), annot=True, cmap='coolwarm')
 plt.show()
 
+
+''' Choose variables and perform Regression Model '''
 # Choose X variables
 X_model_1 = df[['std_total_assets', 'std_pb_ratio', 'std_debt_ratio', 'std_company_age', 'std_managers_percentage', 'crisis_period']]
+
+# Fixed effects model
+fixed_effects_model = PanelOLS.from_formula('y ~ std_total_assets + std_pb_ratio + std_debt_ratio + std_company_age + std_managers_percentage + crisis_period + EntityEffects', data=df)
+fixed_effects_results = fixed_effects_model.fit()
+
+# Display fixed effects model summary
+print(fixed_effects_results.summary)
 
 
 ''' Check Linear Relationship '''
@@ -106,9 +115,9 @@ print("0 to 2：Positive autocorrelation")
 print("2：No autocorrelation")
 print("2 to 4：Negative autocorrelation")
 
-if dw_statistic < 1:
+if dw_statistic < 1.5:
     print("\nConclusion：Significant positive autocorrelation")
-elif dw_statistic > 3:
+elif dw_statistic > 2.5:
     print("\nConclusion：Significant negative autocorrelation")
 else:
     print("\nConclusion：No significant autocorrelation")
@@ -158,52 +167,6 @@ plt.title('Residuals Distribution')
 plt.xlabel('Residuals')
 plt.ylabel('Frequency')
 plt.show()
-
-
-''' Perform Hausman Test '''
-# Fixed effects model
-fixed_effects_model = PanelOLS.from_formula('y ~ std_total_assets + std_pb_ratio + std_debt_ratio + std_company_age + std_managers_percentage + crisis_period + EntityEffects', data=df)
-fixed_effects_results = fixed_effects_model.fit()
-
-# Random effects model
-random_effects_model = RandomEffects.from_formula('y ~ std_total_assets + std_pb_ratio + std_debt_ratio + std_company_age + std_managers_percentage + crisis_period', data=df)
-random_effects_results = random_effects_model.fit()
-
-# Perform Hausman test
-def hausman(fe, re):
-    b_diff = fe.params - re.params
-    b_diff_cov = fe.cov - re.cov
-    chi2 = np.dot(np.dot(b_diff.T, np.linalg.inv(b_diff_cov)), b_diff)
-    df = b_diff.size
-    p_value = stats.chi2.sf(chi2, df)
-    return chi2, df, p_value
-
-chi2, df, p_value = hausman(fixed_effects_results, random_effects_results)
-
-hausman_result = {
-    'Hausman test statistic': chi2,
-    'Degrees of freedom': df,
-    'p-value': p_value,
-    'Fixed effects coefficients': fixed_effects_results.params,
-    'Random effects coefficients': random_effects_results.params
-}
-
-# Display Hausman test results
-print(f"Hausman test statistic: {hausman_result['Hausman test statistic']}")
-print(f"Degrees of freedom: {hausman_result['Degrees of freedom']}")
-print(f"p-value: {hausman_result['p-value']}")
-
-# Display fixed effects model summary
-print(fixed_effects_results.summary)
-
-'''
-Interpretation of results
-Hausman test statistic：This is the test statistic. The larger the value, the greater the difference between the estimates of the fixed effects model and the random effects model.
-Degrees of freedom：This is the degrees of freedom for the test statistic, usually equal to the number of parameters.
-p-value：This is the p-value associated with the test statistic. If the p-value is less than a certain significance level (0.05), it indicates that the data is more suitable for the fixed effects model.
-Fixed effects coefficients：This is the estimated coefficients of the fixed effects model.
-Random effects coefficients：This is the estimated coefficients of the random effects model.
-'''
 
 
 ''' Clean up results '''
